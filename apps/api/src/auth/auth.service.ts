@@ -221,7 +221,7 @@ export class AuthService {
     // Anonymize audit logs (keep for compliance but remove PII)
     await this.prisma.auditLog.updateMany({
       where: { userId },
-      data: { ipAddress: null, metadata: null },
+      data: { ipAddress: null, metadata: Prisma.JsonNull },
     });
 
     // Delete messages

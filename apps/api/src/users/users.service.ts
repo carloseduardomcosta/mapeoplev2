@@ -113,7 +113,7 @@ export class UsersService {
           action: 'user_updated',
           targetUserId: id,
           targetUserName: user.name,
-          changes: dto,
+          changes: JSON.parse(JSON.stringify(dto)),
         },
       },
     });

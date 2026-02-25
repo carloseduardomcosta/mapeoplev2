@@ -3,7 +3,7 @@ import { Transform } from 'class-transformer';
 
 export class QueryMessagesDto {
   @IsString()
-  peerId: string;
+  peerId!: string;
 
   @IsOptional()
   @Transform(({ value }) => parseInt(value, 10))
