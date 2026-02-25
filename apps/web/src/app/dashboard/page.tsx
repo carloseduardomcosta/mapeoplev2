@@ -84,6 +84,20 @@ async function fetchStatusCount(token: string, status: ResidentStatus): Promise<
   }
 }
 
+async function fetchUnreadMessagesCount(token: string): Promise<number> {
+  try {
+    const res = await fetch(`${INTERNAL_API_URL}/api/messages/unread`, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: 'no-store',
+    });
+    if (!res.ok) return 0;
+    const data = await res.json();
+    return data.unreadCount ?? 0;
+  } catch {
+    return 0;
+  }
+}
+
 async function fetchActiveSessionsCount(token: string): Promise<number> {
   try {
     const res = await fetch(`${INTERNAL_API_URL}/api/territories/active-sessions`, {
@@ -108,9 +122,10 @@ export default async function DashboardPage() {
   const user = await getUser(authToken, refreshToken);
   if (!user) redirect('/login');
 
-  const [counts, activeSessionsCount] = await Promise.all([
+  const [counts, activeSessionsCount, unreadMessagesCount] = await Promise.all([
     Promise.all(ALL_STATUSES.map((s) => fetchStatusCount(authToken, s))),
     fetchActiveSessionsCount(authToken),
+    fetchUnreadMessagesCount(authToken),
   ]);
   const statusCounts = Object.fromEntries(
     ALL_STATUSES.map((s, i) => [s, counts[i]]),
@@ -306,15 +321,24 @@ export default async function DashboardPage() {
               href="/chat"
               className="bg-white/10 hover:bg-white/20 backdrop-blur-sm rounded-xl p-5 border border-white/20 transition-colors group flex items-center gap-4"
             >
-              <div className="w-10 h-10 bg-purple-500/30 rounded-lg flex items-center justify-center group-hover:bg-purple-500/50 transition-colors shrink-0">
+              <div className="w-10 h-10 bg-purple-500/30 rounded-lg flex items-center justify-center group-hover:bg-purple-500/50 transition-colors shrink-0 relative">
                 <svg className="w-5 h-5 text-purple-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8}
                     d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
                 </svg>
+                {unreadMessagesCount > 0 && (
+                  <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center">
+                    {unreadMessagesCount > 9 ? '9+' : unreadMessagesCount}
+                  </span>
+                )}
               </div>
               <div>
                 <p className="text-white font-medium">Chat</p>
-                <p className="text-blue-300 text-xs">Mensagens criptografadas E2E</p>
+                <p className="text-blue-300 text-xs">
+                  {unreadMessagesCount > 0
+                    ? `${unreadMessagesCount} mensagem${unreadMessagesCount > 1 ? 'ns' : ''} não lida${unreadMessagesCount > 1 ? 's' : ''}`
+                    : 'Mensagens criptografadas E2E'}
+                </p>
               </div>
             </Link>
 

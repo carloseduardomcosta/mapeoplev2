@@ -18,17 +18,14 @@ import { SendMessageDto } from './dto/send-message.dto';
 import { QueryMessagesDto } from './dto/query-messages.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
-import { EventsGateway } from '../events/events.gateway';
 
 @Controller('messages')
 @UseGuards(JwtAuthGuard)
 export class MessagesController {
-  constructor(
-    private readonly messagesService: MessagesService,
-    private readonly eventsGateway: EventsGateway,
-  ) {}
+  constructor(private readonly messagesService: MessagesService) {}
 
   // ─── POST /api/messages — Send a message ──────────────────────────────────
+  // Real-time delivery is handled inside MessagesService via EventsGateway
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async send(
@@ -36,15 +33,7 @@ export class MessagesController {
     @CurrentUser() user: User,
     @Req() req: Request,
   ) {
-    const message = await this.messagesService.send(dto, user, req.ip);
-
-    // Emit real-time event to receiver
-    this.eventsGateway.emitToUser(dto.receiverId, 'chat:message', message);
-
-    // Also emit to sender (for multi-tab sync)
-    this.eventsGateway.emitToUser(user.id, 'chat:message', message);
-
-    return message;
+    return this.messagesService.send(dto, user, req.ip);
   }
 
   // ─── GET /api/messages/conversations — List all conversations ─────────────
@@ -63,20 +52,13 @@ export class MessagesController {
   }
 
   // ─── PATCH /api/messages/read/:peerId — Mark messages as read ─────────────
+  // Real-time read receipt is handled inside MessagesService via EventsGateway
   @Patch('read/:peerId')
-  async markAsRead(
+  markAsRead(
     @CurrentUser() user: User,
     @Param('peerId') peerId: string,
   ) {
-    const result = await this.messagesService.markAsRead(user.id, peerId);
-
-    // Notify the peer that their messages were read
-    this.eventsGateway.emitToUser(peerId, 'chat:read', {
-      readBy: user.id,
-      peerId: user.id,
-    });
-
-    return result;
+    return this.messagesService.markAsRead(user.id, peerId);
   }
 
   // ─── GET /api/messages/unread — Get total unread count ────────────────────

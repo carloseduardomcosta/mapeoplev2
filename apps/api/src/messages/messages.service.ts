@@ -1,6 +1,7 @@
-import { Injectable, NotFoundException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, Logger, forwardRef, Inject } from '@nestjs/common';
 import { AuditEventType, Prisma, User } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { EventsGateway } from '../events/events.gateway';
 import { SendMessageDto } from './dto/send-message.dto';
 import { QueryMessagesDto } from './dto/query-messages.dto';
 
@@ -25,7 +26,11 @@ export interface ConversationPreview {
 export class MessagesService {
   private readonly logger = new Logger(MessagesService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(forwardRef(() => EventsGateway))
+    private readonly eventsGateway: EventsGateway,
+  ) {}
 
   // ─── Send a message ─────────────────────────────────────────────────────────
 
@@ -68,6 +73,14 @@ export class MessagesService {
     });
 
     this.logger.log(`[Chat] Message sent: ${sender.name} → ${receiver.name} (id: ${message.id})`);
+
+    // ─── Emit via Socket.io in real-time ────────────────────────────────────
+    // Deliver to receiver's room
+    this.eventsGateway.emitToUser(dto.receiverId, 'chat:message', message);
+    // Also emit back to sender so their own UI updates instantly (no polling needed)
+    this.eventsGateway.emitToUser(sender.id, 'chat:message', message);
+
+    this.logger.debug(`[Chat] Emitted chat:message to user:${dto.receiverId} and user:${sender.id}`);
 
     return message;
   }
@@ -205,6 +218,12 @@ export class MessagesService {
     });
 
     this.logger.debug(`[Chat] Marked ${result.count} messages as read (from ${peerId} to ${userId})`);
+
+    // Notify sender that their messages were read
+    if (result.count > 0) {
+      this.eventsGateway.emitToUser(peerId, 'chat:read', { readBy: userId });
+      this.logger.debug(`[Chat] Emitted chat:read to user:${peerId}`);
+    }
 
     return { markedCount: result.count };
   }

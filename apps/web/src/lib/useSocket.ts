@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
 
 export interface OnlineUser {
@@ -21,9 +21,13 @@ interface UseSocketReturn {
 /**
  * Hook que gerencia a conexão Socket.io com autenticação via cookie.
  * Reconecta automaticamente e mantém a lista de usuários online.
+ *
+ * IMPORTANT: socket is stored in a ref but exposed as state to trigger
+ * re-renders when connection state changes.
  */
 export function useSocket(): UseSocketReturn {
   const socketRef = useRef<Socket | null>(null);
+  const [socket, setSocket] = useState<Socket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [onlineUsers, setOnlineUsers] = useState<OnlineUser[]>([]);
 
@@ -37,10 +41,9 @@ export function useSocket(): UseSocketReturn {
 
     console.log('[useSocket] Connecting to:', socketUrl);
 
-    const socket = io(socketUrl, {
+    const newSocket = io(socketUrl, {
       transports: ['websocket', 'polling'],
       withCredentials: true,
-      // Token will be sent via cookie (auth_token)
       autoConnect: true,
       reconnection: true,
       reconnectionAttempts: Infinity,
@@ -48,42 +51,41 @@ export function useSocket(): UseSocketReturn {
       reconnectionDelayMax: 10000,
     });
 
-    socketRef.current = socket;
+    socketRef.current = newSocket;
+    // Expose socket instance via state so consumers re-render when it's ready
+    setSocket(newSocket);
 
-    socket.on('connect', () => {
-      console.log('[useSocket] ✓ Connected:', socket.id);
+    newSocket.on('connect', () => {
+      console.log('[useSocket] ✓ Connected:', newSocket.id);
       setIsConnected(true);
-      // Request current online users
-      socket.emit('users:list');
+      // Request current online users list immediately after connect
+      newSocket.emit('users:list');
     });
 
-    socket.on('disconnect', (reason) => {
+    newSocket.on('disconnect', (reason) => {
       console.log('[useSocket] ✗ Disconnected:', reason);
       setIsConnected(false);
     });
 
-    socket.on('connect_error', (err) => {
+    newSocket.on('connect_error', (err) => {
       console.log('[useSocket] Connection error:', err.message);
       setIsConnected(false);
     });
 
-    // Listen for online users updates
-    socket.on('users:online', (users: OnlineUser[]) => {
+    // Listen for online users updates — keep state fresh
+    newSocket.on('users:online', (users: OnlineUser[]) => {
       console.log('[useSocket] Online users updated:', users.length);
       setOnlineUsers(users);
     });
 
     return () => {
       console.log('[useSocket] Cleaning up socket connection');
-      socket.removeAllListeners();
-      socket.disconnect();
+      newSocket.removeAllListeners();
+      newSocket.disconnect();
       socketRef.current = null;
+      setSocket(null);
     };
   }, []);
 
-  return {
-    socket: socketRef.current,
-    isConnected,
-    onlineUsers,
-  };
+  return { socket, isConnected, onlineUsers };
 }
