@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { GoogleMap, Marker, InfoWindow, Polygon, useLoadScript } from '@react-google-maps/api';
+import UserLocationMarker from '@/components/UserLocationMarker';
 import NavBar from '@/components/NavBar';
 import AuthenticatedLayout from '@/components/AuthenticatedLayout';
 import { useSocketContext } from '@/components/SocketProvider';
@@ -109,6 +110,15 @@ function MapContent() {
   const [center, setCenter] = useState(
     initLat && initLng ? { lat: initLat, lng: initLng } : MAP_CENTER,
   );
+  const [me, setMe] = useState<{ id: string; name: string; image: string | null } | null>(null);
+
+  // Fetch current user for marker differentiation
+  useEffect(() => {
+    fetchWithAuth('/api/auth/me')
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => { if (data) setMe(data); })
+      .catch(() => {});
+  }, []);
 
   // Location sharing via Socket.io
   const { socket } = useSocketContext();
@@ -355,20 +365,12 @@ function MapContent() {
                   </InfoWindow>
                 );
               })()}
-              {/* Live user locations */}
+              {/* Live user locations — circular profile photo markers */}
               {Array.from(userLocations.values()).map((loc: UserLocation) => (
-                <Marker
+                <UserLocationMarker
                   key={`loc-${loc.userId}`}
-                  position={{ lat: loc.lat, lng: loc.lng }}
-                  icon={{
-                    url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(
-                      `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><circle cx="16" cy="16" r="12" fill="#22C55E" stroke="white" stroke-width="3" opacity="0.9"/><circle cx="16" cy="16" r="5" fill="white"/></svg>`
-                    )}`,
-                    scaledSize: new window.google.maps.Size(32, 32),
-                    anchor: new window.google.maps.Point(16, 16),
-                  }}
-                  title={`${loc.name} (ao vivo)`}
-                  zIndex={1000}
+                  location={loc}
+                  isMe={loc.userId === me?.id}
                 />
               ))}
             </GoogleMap>
