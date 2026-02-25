@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import NavBar from '@/components/NavBar';
+import AuthenticatedLayout from '@/components/AuthenticatedLayout';
 import { fetchWithAuth } from '@/lib/fetchWithAuth';
 import { Territory } from '@/types/territory';
 
@@ -55,6 +56,7 @@ export default function TerritoriesPage() {
   }
 
   return (
+    <AuthenticatedLayout>
     <div className="min-h-screen bg-gradient-to-br from-slate-900 to-blue-900">
       <NavBar />
 
@@ -108,6 +110,7 @@ export default function TerritoriesPage() {
         )}
       </div>
     </div>
+    </AuthenticatedLayout>
   );
 }
 
@@ -183,9 +186,9 @@ function TerritoryCard({ territory, sessionLoading, onStartSession, onEndSession
         {/* Active session info */}
         {active ? (
           <div className="flex items-center gap-2 bg-green-500/10 border border-green-500/20 rounded-xl px-3 py-2">
-            {active.user?.picture ? (
+            {active.user?.image ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={active.user.picture} alt={active.user.name}
+              <img src={active.user.image} alt={active.user.name}
                 className="w-7 h-7 rounded-full border border-green-400/50 shrink-0" />
             ) : (
               <div className="w-7 h-7 rounded-full bg-green-500/30 border border-green-400/50 flex items-center justify-center text-green-300 text-xs font-bold shrink-0">

@@ -55,6 +55,7 @@ model User {
   isActive      Boolean   @default(false)
   inviteToken   String?   @unique
   inviteExpires DateTime?
+  publicKey     String?           // ECDH public key (JWK) for E2E encryption
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 

@@ -137,6 +137,147 @@ export class AuthService {
     });
   }
 
+  // ─── LGPD: Direito de Acesso (Exportar dados pessoais) ───────────────────
+
+  async exportMyData(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        image: true,
+        role: true,
+        isActive: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    const residents = await this.prisma.resident.findMany({
+      where: { createdById: userId },
+      select: {
+        id: true,
+        fullName: true,
+        address: true,
+        phone: true,
+        status: true,
+        notes: true,
+        createdAt: true,
+      },
+    });
+
+    const auditLogs = await this.prisma.auditLog.findMany({
+      where: { userId },
+      select: {
+        eventType: true,
+        metadata: true,
+        ipAddress: true,
+        createdAt: true,
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 500,
+    });
+
+    const sessions = await this.prisma.territorySession.findMany({
+      where: { userId },
+      select: {
+        territory: { select: { name: true, number: true } },
+        startedAt: true,
+        endedAt: true,
+      },
+    });
+
+    const messageCount = await this.prisma.message.count({
+      where: { OR: [{ senderId: userId }, { receiverId: userId }] },
+    });
+
+    this.logger.log(`[LGPD] Data export requested by user ${userId}`);
+
+    await this.audit(userId, AuditEventType.DATA_EXPORTED, undefined, {
+      action: 'data_export',
+      recordCounts: {
+        residents: residents.length,
+        auditLogs: auditLogs.length,
+        sessions: sessions.length,
+        messages: messageCount,
+      },
+    });
+
+    return {
+      exportDate: new Date().toISOString(),
+      user,
+      residentsCreated: residents,
+      territorySessions: sessions,
+      auditLogs,
+      messageCount,
+      note: 'Mensagens não são incluídas pois são criptografadas de ponta a ponta e não podem ser lidas pelo servidor.',
+    };
+  }
+
+  // ─── LGPD: Direito de Exclusão (Deletar conta) ────────────────────────
+
+  async deleteMyAccount(userId: string, ipAddress?: string) {
+    // Anonymize audit logs (keep for compliance but remove PII)
+    await this.prisma.auditLog.updateMany({
+      where: { userId },
+      data: { ipAddress: null, metadata: null },
+    });
+
+    // Delete messages
+    await this.prisma.message.deleteMany({
+      where: { OR: [{ senderId: userId }, { receiverId: userId }] },
+    });
+
+    // End active territory sessions
+    await this.prisma.territorySession.updateMany({
+      where: { userId, isActive: true },
+      data: { isActive: false, endedAt: new Date() },
+    });
+
+    // Delete refresh tokens
+    await this.prisma.refreshToken.deleteMany({ where: { userId } });
+    await this.redis.del(`rt:${userId}`);
+
+    // Anonymize user record (keep ID for audit log FK integrity)
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        name: 'Usuário Removido',
+        email: `deleted-${userId}@removed.local`,
+        image: null,
+        googleId: null,
+        isActive: false,
+        inviteToken: null,
+        inviteExpires: null,
+        publicKey: null,
+      },
+    });
+
+    this.logger.log(`[LGPD] Account deleted/anonymized for user ${userId}`);
+
+    return { message: 'Conta removida com sucesso. Seus dados pessoais foram anonimizados.' };
+  }
+
+  // ─── E2E Encryption: Public Key Management ───────────────────────────────
+
+  async setPublicKey(userId: string, publicKey: string) {
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { publicKey },
+    });
+    this.logger.log(`[E2E] Public key stored for user ${userId}`);
+    return { ok: true };
+  }
+
+  async getPublicKey(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, publicKey: true },
+    });
+    return { userId: user?.id, publicKey: user?.publicKey ?? null };
+  }
+
   // ─── Helpers privados ─────────────────────────────────────────────────────
 
   private async generateTokens(user: User): Promise<TokenPair> {

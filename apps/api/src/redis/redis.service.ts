@@ -33,6 +33,42 @@ export class RedisService implements OnModuleDestroy {
     await this.client.del(key);
   }
 
+  // ─── Set operations (for online users tracking) ───────────────────────────
+
+  async sadd(key: string, ...members: string[]): Promise<number> {
+    return this.client.sadd(key, ...members);
+  }
+
+  async srem(key: string, ...members: string[]): Promise<number> {
+    return this.client.srem(key, ...members);
+  }
+
+  async smembers(key: string): Promise<string[]> {
+    return this.client.smembers(key);
+  }
+
+  async scard(key: string): Promise<number> {
+    return this.client.scard(key);
+  }
+
+  // ─── Hash operations (for user socket mapping) ────────────────────────────
+
+  async hset(key: string, field: string, value: string): Promise<number> {
+    return this.client.hset(key, field, value);
+  }
+
+  async hget(key: string, field: string): Promise<string | null> {
+    return this.client.hget(key, field);
+  }
+
+  async hdel(key: string, ...fields: string[]): Promise<number> {
+    return this.client.hdel(key, ...fields);
+  }
+
+  async hgetall(key: string): Promise<Record<string, string>> {
+    return this.client.hgetall(key);
+  }
+
   async onModuleDestroy() {
     await this.client.quit();
   }

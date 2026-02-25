@@ -10,7 +10,7 @@ export interface PendingUser {
   id: string;
   name: string;
   email: string;
-  picture?: string;
+  image?: string;
   role: 'ADMIN' | 'SUPERVISOR' | 'VOLUNTARIO';
   status: string;
   createdAt: string;

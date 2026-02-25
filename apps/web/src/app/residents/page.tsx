@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import NavBar from '@/components/NavBar';
+import AuthenticatedLayout from '@/components/AuthenticatedLayout';
 import StatusBadge from '@/components/StatusBadge';
 import { fetchWithAuth } from '@/lib/fetchWithAuth';
 import { Resident, ResidentStatus, PaginatedResult } from '@/types/resident';
@@ -82,6 +83,7 @@ export default function ResidentsPage() {
   }
 
   return (
+    <AuthenticatedLayout>
     <div className="min-h-screen bg-gradient-to-br from-slate-900 to-blue-900">
       <NavBar />
 
@@ -94,15 +96,42 @@ export default function ResidentsPage() {
               {meta.total} {meta.total === 1 ? 'morador cadastrado' : 'moradores cadastrados'}
             </p>
           </div>
-          <Link
-            href="/residents/new"
-            className="flex items-center gap-2 bg-blue-500 hover:bg-blue-400 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-            Novo Morador
-          </Link>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={async () => {
+                try {
+                  const res = await fetchWithAuth('/api/residents/export/csv');
+                  if (!res.ok) return;
+                  const blob = await res.blob();
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `moradores-${new Date().toISOString().split('T')[0]}.csv`;
+                  document.body.appendChild(a);
+                  a.click();
+                  document.body.removeChild(a);
+                  URL.revokeObjectURL(url);
+                } catch {}
+              }}
+              className="flex items-center gap-2 bg-white/10 hover:bg-white/20 text-blue-300 text-sm font-medium px-4 py-2 rounded-lg transition-colors border border-white/20"
+              title="Exportar moradores em CSV"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              CSV
+            </button>
+            <Link
+              href="/residents/new"
+              className="flex items-center gap-2 bg-blue-500 hover:bg-blue-400 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              Novo Morador
+            </Link>
+          </div>
         </div>
 
         {/* Filtros */}
@@ -305,5 +334,6 @@ export default function ResidentsPage() {
         )}
       </div>
     </div>
+    </AuthenticatedLayout>
   );
 }

@@ -154,6 +154,55 @@ export class ResidentsService {
     return updated;
   }
 
+  // ─── CSV Export ───────────────────────────────────────────────────────
+
+  async exportCsv(user: User, ipAddress?: string): Promise<string> {
+    const residents = await this.prisma.resident.findMany({
+      orderBy: { fullName: 'asc' },
+      include: {
+        createdBy: { select: { name: true } },
+      },
+    });
+
+    const STATUS_MAP: Record<string, string> = {
+      NAO_VISITADO: 'Não Visitado',
+      REVISITA: 'Revisita',
+      ESTUDO: 'Estudo Bíblico',
+      NAO_BATER: 'Não Bater',
+      AUSENTE: 'Ausente',
+      MUDOU: 'Mudou',
+    };
+
+    const header = 'Nome,Endereço,Telefone,Status,Observações,Cadastrado por,Data Cadastro';
+    const rows = residents.map((r) => {
+      const escape = (s: string | null) => {
+        if (!s) return '';
+        return '"' + s.replace(/"/g, '""') + '"';
+      };
+      return [
+        escape(r.fullName),
+        escape(r.address),
+        escape(r.phone),
+        STATUS_MAP[r.status] ?? r.status,
+        escape(r.notes),
+        escape(r.createdBy?.name ?? ''),
+        r.createdAt.toLocaleDateString('pt-BR'),
+      ].join(',');
+    });
+
+    // Audit log
+    await this.prisma.auditLog.create({
+      data: {
+        eventType: AuditEventType.DATA_EXPORTED,
+        userId: user.id,
+        ipAddress,
+        metadata: { format: 'csv', count: residents.length },
+      },
+    });
+
+    return [header, ...rows].join('\n');
+  }
+
   // ─── DELETE /residents/:id ────────────────────────────────────────────────
 
   async remove(id: string, user: User, ipAddress?: string): Promise<void> {

@@ -6,7 +6,7 @@ export interface PolygonPoint {
 export interface TerritoryUser {
   id: string;
   name: string;
-  picture?: string | null;
+  image?: string | null;
 }
 
 export interface TerritorySession {

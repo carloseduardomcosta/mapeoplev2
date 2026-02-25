@@ -190,9 +190,9 @@ export default function InvitesClient({ initialPendingUsers }: Props) {
               <li key={user.id} className="px-6 py-4 flex flex-col sm:flex-row sm:items-center gap-3">
                 {/* Avatar + info */}
                 <div className="flex items-center gap-3 flex-1 min-w-0">
-                  {user.picture ? (
+                  {user.image ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={user.picture} alt={user.name}
+                    <img src={user.image} alt={user.name}
                       className="w-10 h-10 rounded-full border border-blue-400/50 shrink-0" />
                   ) : (
                     <div className="w-10 h-10 rounded-full bg-blue-500/30 border border-blue-400/50 flex items-center justify-center text-white font-semibold shrink-0">

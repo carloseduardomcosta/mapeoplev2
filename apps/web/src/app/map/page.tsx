@@ -5,8 +5,11 @@ import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { GoogleMap, Marker, InfoWindow, Polygon, useLoadScript } from '@react-google-maps/api';
 import NavBar from '@/components/NavBar';
+import AuthenticatedLayout from '@/components/AuthenticatedLayout';
+import { useSocketContext } from '@/components/SocketProvider';
 import StatusBadge from '@/components/StatusBadge';
 import { fetchWithAuth } from '@/lib/fetchWithAuth';
+import { useLocationSharing, UserLocation } from '@/lib/useLocationSharing';
 import { Resident, ResidentStatus } from '@/types/resident';
 import { Territory } from '@/types/territory';
 
@@ -107,16 +110,37 @@ function MapContent() {
     initLat && initLng ? { lat: initLat, lng: initLng } : MAP_CENTER,
   );
 
+  // Location sharing via Socket.io
+  const { socket } = useSocketContext();
+  const { isSharing, startSharing, stopSharing, userLocations, error: locationError } = useLocationSharing(socket);
+
   const fetchResidents = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetchWithAuth('/api/residents?limit=100');
-      if (!res.ok) return;
-      const data = await res.json();
-      const list: Resident[] = data.data ?? [];
-      setResidents(list);
+      // Load all residents with automatic pagination
+      const allResidents: Resident[] = [];
+      let page = 1;
+      let hasMore = true;
+
+      while (hasMore) {
+        const res = await fetchWithAuth(`/api/residents?limit=100&page=${page}`);
+        if (!res.ok) break;
+        const data = await res.json();
+        const batch: Resident[] = data.data ?? [];
+        allResidents.push(...batch);
+
+        if (page >= data.totalPages || batch.length === 0) {
+          hasMore = false;
+        } else {
+          page++;
+        }
+      }
+
+      setResidents(allResidents);
+      console.log(`[Map] Loaded ${allResidents.length} residents (${page} pages)`);
+
       if (highlightId) {
-        const found = list.find((r) => r.id === highlightId);
+        const found = allResidents.find((r) => r.id === highlightId);
         if (found) setSelected(found);
       }
     } finally {
@@ -331,19 +355,71 @@ function MapContent() {
                   </InfoWindow>
                 );
               })()}
+              {/* Live user locations */}
+              {Array.from(userLocations.values()).map((loc: UserLocation) => (
+                <Marker
+                  key={`loc-${loc.userId}`}
+                  position={{ lat: loc.lat, lng: loc.lng }}
+                  icon={{
+                    url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(
+                      `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><circle cx="16" cy="16" r="12" fill="#22C55E" stroke="white" stroke-width="3" opacity="0.9"/><circle cx="16" cy="16" r="5" fill="white"/></svg>`
+                    )}`,
+                    scaledSize: new window.google.maps.Size(32, 32),
+                    anchor: new window.google.maps.Point(16, 16),
+                  }}
+                  title={`${loc.name} (ao vivo)`}
+                  zIndex={1000}
+                />
+              ))}
             </GoogleMap>
           )}
 
-          {/* FAB */}
-          <Link
-            href="/residents/new"
-            className="absolute bottom-6 right-6 w-14 h-14 bg-blue-500 hover:bg-blue-400 text-white rounded-full shadow-lg flex items-center justify-center transition-all hover:scale-110 z-10"
-            title="Adicionar Morador"
-          >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-          </Link>
+          {/* FABs */}
+          <div className="absolute bottom-6 right-6 flex flex-col gap-3 z-10">
+            {/* Location sharing toggle */}
+            <button
+              onClick={isSharing ? stopSharing : startSharing}
+              className={`w-14 h-14 rounded-full shadow-lg flex items-center justify-center transition-all hover:scale-110 ${
+                isSharing
+                  ? 'bg-green-500 hover:bg-green-400 animate-pulse'
+                  : 'bg-slate-700 hover:bg-slate-600'
+              }`}
+              title={isSharing ? 'Parar compartilhamento de localização' : 'Compartilhar minha localização'}
+            >
+              <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+            </button>
+
+            {/* Add resident FAB */}
+            <Link
+              href="/residents/new"
+              className="w-14 h-14 bg-blue-500 hover:bg-blue-400 text-white rounded-full shadow-lg flex items-center justify-center transition-all hover:scale-110"
+              title="Adicionar Morador"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+            </Link>
+          </div>
+
+          {/* Location error toast */}
+          {locationError && (
+            <div className="absolute bottom-6 left-6 bg-red-500/90 text-white text-xs px-4 py-2 rounded-lg shadow-lg z-10">
+              {locationError}
+            </div>
+          )}
+
+          {/* Live users count */}
+          {userLocations.size > 0 && (
+            <div className="absolute top-4 right-4 bg-green-500/90 text-white text-xs font-medium px-3 py-1.5 rounded-full shadow-lg z-10 flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
+              {userLocations.size} ao vivo
+            </div>
+          )}
         </div>
 
         {/* Active sessions panel */}
@@ -373,9 +449,9 @@ function MapContent() {
                     </p>
                   </div>
                   <div className="flex items-center gap-1.5 ml-4">
-                    {t.activeSession?.user?.picture ? (
+                    {t.activeSession?.user?.image ? (
                       // eslint-disable-next-line @next/next/no-img-element
-                      <img src={t.activeSession.user.picture} alt={t.activeSession.user.name}
+                      <img src={t.activeSession.user.image} alt={t.activeSession.user.name}
                         className="w-5 h-5 rounded-full border border-green-400/50" />
                     ) : (
                       <div className="w-5 h-5 rounded-full bg-green-500/30 border border-green-400/50 flex items-center justify-center text-green-300 text-xs font-bold">
@@ -399,6 +475,7 @@ function MapContent() {
 
 export default function MapPage() {
   return (
+    <AuthenticatedLayout>
     <div className="h-screen bg-gradient-to-br from-slate-900 to-blue-900 flex flex-col">
       <NavBar />
       <Suspense
@@ -411,5 +488,6 @@ export default function MapPage() {
         <MapContent />
       </Suspense>
     </div>
+    </AuthenticatedLayout>
   );
 }

@@ -2,6 +2,8 @@ import {
   Controller,
   Get,
   Post,
+  Put,
+  Param,
   Body,
   Req,
   Res,
@@ -120,5 +122,40 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   async me(@CurrentUser() user: User) {
     return this.authService.getMe(user.id);
+  }
+
+  // ─── GET /api/auth/my-data — LGPD: Export personal data ──────────────
+  @Get('my-data')
+  @UseGuards(JwtAuthGuard)
+  async exportMyData(@CurrentUser() user: User) {
+    return this.authService.exportMyData(user.id);
+  }
+
+  // ─── Post /api/auth/delete-account — LGPD: Delete account ─────────────
+  @Post('delete-account')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  async deleteAccount(@CurrentUser() user: User, @Req() req: Request, @Res() res: Response) {
+    const result = await this.authService.deleteMyAccount(user.id, req.ip);
+    res.clearCookie('auth_token', COOKIE_OPTS);
+    res.clearCookie('refresh_token', COOKIE_OPTS);
+    res.json(result);
+  }
+
+  // ─── PUT /api/auth/public-key — Store user's E2E public key ─────────────
+  @Put('public-key')
+  @UseGuards(JwtAuthGuard)
+  async setPublicKey(
+    @CurrentUser() user: User,
+    @Body('publicKey') publicKey: string,
+  ) {
+    return this.authService.setPublicKey(user.id, publicKey);
+  }
+
+  // ─── GET /api/auth/public-key/:userId — Get a user's public key ───────
+  @Get('public-key/:userId')
+  @UseGuards(JwtAuthGuard)
+  async getPublicKey(@Param('userId') userId: string) {
+    return this.authService.getPublicKey(userId);
   }
 }

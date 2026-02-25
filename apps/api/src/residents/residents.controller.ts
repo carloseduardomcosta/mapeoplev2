@@ -8,11 +8,13 @@ import {
   Param,
   Query,
   Req,
+  Res,
   HttpCode,
   HttpStatus,
   UseGuards,
+  Header,
 } from '@nestjs/common';
-import { Request } from 'express';
+import { Request, Response } from 'express';
 import { Role, User } from '@prisma/client';
 import { ResidentsService } from './residents.service';
 import { CreateResidentDto } from './dto/create-resident.dto';
@@ -34,6 +36,15 @@ export class ResidentsController {
     return this.residentsService.findAll(query);
   }
 
+  // ─── GET /api/residents/export/csv — Export residents as CSV ──────────────
+  @Get('export/csv')
+  async exportCsv(@CurrentUser() user: User, @Req() req: Request, @Res() res: Response) {
+    const csv = await this.residentsService.exportCsv(user, req.ip);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename=moradores-${new Date().toISOString().split('T')[0]}.csv`);
+    res.send('\uFEFF' + csv); // BOM for Excel UTF-8 compatibility
+  }
+
   // ─── GET /api/residents/:id ────────────────────────────────────────────────
   @Get(':id')
   findOne(@Param('id') id: string) {
@@ -52,7 +63,6 @@ export class ResidentsController {
   }
 
   // ─── PATCH /api/residents/:id ──────────────────────────────────────────────
-  // ADMIN edita qualquer; SUPERVISOR e VOLUNTARIO apenas os próprios (verificado no service)
   @Patch(':id')
   update(
     @Param('id') id: string,
