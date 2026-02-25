@@ -234,16 +234,25 @@ export async function decryptMessage(
   iv: string,
   senderId: string,
   receiverId: string,
+  myId?: string,
 ): Promise<string> {
-  // Try ECDH first, then fallback
-  const peerId = senderId; // The peer is the sender (we are the receiver)
+  // Determine who the peer is:
+  // - If I am the sender, the peer is the receiver (I need their public key to re-derive the shared secret)
+  // - If I am the receiver, the peer is the sender
+  // ECDH shared secret is symmetric: derive(myPrivate, peerPublic) == derive(peerPrivate, myPublic)
+  const peerId = myId === senderId ? receiverId : senderId;
+
+  console.log(`[E2E] Decrypting — sender: ${senderId}, receiver: ${receiverId}, peerId: ${peerId}`);
+
   const peerKey = await getPeerPublicKey(peerId);
 
   const keysToTry: CryptoKey[] = [];
 
   if (peerKey) {
     keysToTry.push(await deriveSharedKey(peerKey));
+    console.log('[E2E] Will try ECDH shared key first');
   }
+  // Always add fallback as last resort
   keysToTry.push(await deriveFallbackKey(senderId, receiverId));
 
   for (const aesKey of keysToTry) {
@@ -253,13 +262,14 @@ export async function decryptMessage(
         aesKey,
         base64ToBuffer(encryptedContent),
       );
+      console.log('[E2E] ✓ Decryption successful');
       return new TextDecoder().decode(decrypted);
     } catch {
       // Try next key
     }
   }
 
-  console.error('[E2E] Failed to decrypt message with any available key');
+  console.error('[E2E] ✗ Failed to decrypt message with any available key', { senderId, receiverId, peerId });
   return '[Mensagem não pôde ser descriptografada]';
 }
 

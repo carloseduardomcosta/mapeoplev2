@@ -31,6 +31,8 @@ export default function ChatPage() {
   const [typingUser, setTypingUser] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  // Use a ref for selectedPeerId inside socket callbacks to avoid stale closures
+  const selectedPeerIdRef = useRef<string | null>(null);
 
   // ─── Fetch current user ───────────────────────────────────────────────────
   useEffect(() => {
@@ -102,6 +104,7 @@ export default function ChatPage() {
             msg.iv,
             msg.senderId,
             msg.receiverId,
+            me.id, // pass myId so decryptMessage knows which side I am
           );
           newDecrypted.set(msg.id, plaintext);
         }
@@ -123,29 +126,31 @@ export default function ChatPage() {
     if (!socket || !me) return;
 
     const handleNewMessage = (msg: ChatMessage) => {
-      console.log('[Chat] Received message via socket:', msg.id);
+      // Use ref to avoid stale closure — selectedPeerId may have changed since listener was registered
+      const currentPeerId = selectedPeerIdRef.current;
+      console.log('[Chat] Received message via socket:', msg.id, '| currentPeer:', currentPeerId);
 
-      // If this message is for the current conversation, add it
+      // If this message is for the current conversation, add it immediately
       if (
-        selectedPeerId &&
-        (msg.senderId === selectedPeerId || msg.receiverId === selectedPeerId)
+        currentPeerId &&
+        (msg.senderId === currentPeerId || msg.receiverId === currentPeerId)
       ) {
         setMessages((prev) => {
           if (prev.some((m) => m.id === msg.id)) return prev;
           return [...prev, msg];
         });
         // Mark as read if from peer
-        if (msg.senderId === selectedPeerId) {
-          fetchWithAuth(`/api/messages/read/${selectedPeerId}`, { method: 'PATCH' }).catch(() => {});
+        if (msg.senderId === currentPeerId) {
+          fetchWithAuth(`/api/messages/read/${currentPeerId}`, { method: 'PATCH' }).catch(() => {});
         }
       }
 
-      // Refresh conversations list
+      // Always refresh conversations list (updates unread count)
       fetchConversations();
     };
 
     const handleTyping = (data: { userId: string; name: string }) => {
-      if (data.userId === selectedPeerId) {
+      if (data.userId === selectedPeerIdRef.current) {
         setTypingUser(data.name);
         if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
         typingTimeoutRef.current = setTimeout(() => setTypingUser(null), 3000);
@@ -153,13 +158,13 @@ export default function ChatPage() {
     };
 
     const handleStopTyping = (data: { userId: string }) => {
-      if (data.userId === selectedPeerId) {
+      if (data.userId === selectedPeerIdRef.current) {
         setTypingUser(null);
       }
     };
 
     const handleRead = (data: { readBy: string }) => {
-      if (data.readBy === selectedPeerId) {
+      if (data.readBy === selectedPeerIdRef.current) {
         setMessages((prev) =>
           prev.map((m) =>
             m.senderId === me.id && !m.isRead ? { ...m, isRead: true } : m,
@@ -186,10 +191,14 @@ export default function ChatPage() {
     e.preventDefault();
     if (!newMessage.trim() || !selectedPeerId || !me || sending) return;
 
+    const textToSend = newMessage.trim();
     setSending(true);
+    // Optimistically clear the input
+    setNewMessage('');
+
     try {
       const { encryptedContent, iv } = await encryptMessage(
-        newMessage.trim(),
+        textToSend,
         me.id,
         selectedPeerId,
       );
@@ -205,9 +214,29 @@ export default function ChatPage() {
       });
 
       if (res.ok) {
-        setNewMessage('');
+        const saved: ChatMessage = await res.json();
         socket?.emit('chat:stop-typing', { receiverId: selectedPeerId });
+
+        // Add message locally immediately (optimistic update)
+        // The socket event from the server will be deduplicated by the ID check
+        setMessages((prev) => {
+          if (prev.some((m) => m.id === saved.id)) return prev;
+          return [...prev, saved];
+        });
+        // Decrypt the sent message immediately using the plaintext we already have
+        setDecryptedMessages((prev) => {
+          const next = new Map(prev);
+          next.set(saved.id, textToSend);
+          return next;
+        });
+        fetchConversations();
+      } else {
+        // Restore message on failure
+        setNewMessage(textToSend);
       }
+    } catch (err) {
+      console.error('[Chat] Failed to send message:', err);
+      setNewMessage(textToSend);
     } finally {
       setSending(false);
     }
@@ -228,6 +257,7 @@ export default function ChatPage() {
   // ─── Select a peer ────────────────────────────────────────────────────────
   function selectPeer(peerId: string) {
     setSelectedPeerId(peerId);
+    selectedPeerIdRef.current = peerId;
     setShowNewChat(false);
     setMessages([]);
     setDecryptedMessages(new Map());
@@ -236,7 +266,9 @@ export default function ChatPage() {
 
   // ─── Helper: check if user is online ──────────────────────────────────────
   function isOnline(userId: string): boolean {
-    return onlineUsers.some((u) => u.id === userId);
+    const online = onlineUsers.some((u) => u.id === userId);
+    console.log(`[Chat] isOnline(${userId}): ${online} | onlineUsers: [${onlineUsers.map((u) => u.id).join(', ')}]`);
+    return online;
   }
 
   // ─── Get selected peer info ───────────────────────────────────────────────
