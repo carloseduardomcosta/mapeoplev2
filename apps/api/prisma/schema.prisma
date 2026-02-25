@@ -1,0 +1,160 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ───────────────────────────────────────────────────────────────────
+
+enum Role {
+  ADMIN
+  SUPERVISOR
+  VOLUNTARIO
+}
+
+enum ResidentStatus {
+  NAO_CONTATADO
+  CONTATADO
+  AUSENTE
+  RECUSOU
+  INTERESSADO
+}
+
+enum AuditEventType {
+  LOGIN
+  LOGOUT
+  ACCESS_DENIED
+  RESIDENT_CREATED
+  RESIDENT_UPDATED
+  RESIDENT_DELETED
+  STATUS_CHANGED
+  MESSAGE_SENT
+  DATA_EXPORTED
+  INVITE_SENT
+  INVITE_ACCEPTED
+  TERRITORY_CREATED
+  TERRITORY_UPDATED
+  TERRITORY_DELETED
+  TERRITORY_SESSION_STARTED
+  TERRITORY_SESSION_ENDED
+}
+
+// ─── Models ──────────────────────────────────────────────────────────────────
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String
+  image         String?
+  googleId      String?   @unique
+  role          Role      @default(VOLUNTARIO)
+  isActive      Boolean   @default(false)
+  inviteToken   String?   @unique
+  inviteExpires DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  refreshTokens      RefreshToken[]
+  createdResidents   Resident[]         @relation("CreatedBy")
+  updatedResidents   Resident[]         @relation("UpdatedBy")
+  auditLogs          AuditLog[]
+  sentMessages       Message[]          @relation("SentMessages")
+  receivedMessages   Message[]          @relation("ReceivedMessages")
+  territoriesCreated Territory[]        @relation("TerritoryCreatedBy")
+  territorySessions  TerritorySession[]
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+}
+
+model Resident {
+  id          String         @id @default(cuid())
+  fullName    String
+  address     String
+  lat         Float
+  lng         Float
+  phone       String?
+  notes       String?
+  status      ResidentStatus @default(NAO_CONTATADO)
+  visitDate   DateTime?
+  createdById String
+  createdBy   User           @relation("CreatedBy", fields: [createdById], references: [id])
+  updatedById String?
+  updatedBy   User?          @relation("UpdatedBy", fields: [updatedById], references: [id])
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  auditLogs AuditLog[]
+}
+
+model Territory {
+  id          String             @id @default(cuid())
+  number      Int                @unique
+  name        String
+  description String?
+  polygon     Json
+  color       String             @default("#4488FF")
+  isActive    Boolean            @default(true)
+  createdById String
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  sessions  TerritorySession[]
+  createdBy User               @relation("TerritoryCreatedBy", fields: [createdById], references: [id])
+}
+
+model TerritorySession {
+  id          String    @id @default(cuid())
+  territoryId String
+  userId      String
+  startedAt   DateTime  @default(now())
+  endedAt     DateTime?
+  isActive    Boolean   @default(true)
+
+  territory Territory @relation(fields: [territoryId], references: [id])
+  user      User      @relation(fields: [userId], references: [id])
+
+  @@index([isActive])
+  @@index([userId])
+}
+
+model AuditLog {
+  id         String         @id @default(cuid())
+  eventType  AuditEventType
+  userId     String
+  user       User           @relation(fields: [userId], references: [id])
+  residentId String?
+  resident   Resident?      @relation(fields: [residentId], references: [id])
+  metadata   Json?
+  ipAddress  String?
+  createdAt  DateTime       @default(now())
+
+  @@index([userId])
+  @@index([eventType])
+  @@index([createdAt])
+}
+
+model Message {
+  id               String   @id @default(cuid())
+  senderId         String
+  sender           User     @relation("SentMessages", fields: [senderId], references: [id])
+  receiverId       String
+  receiver         User     @relation("ReceivedMessages", fields: [receiverId], references: [id])
+  encryptedContent String
+  iv               String
+  isRead           Boolean  @default(false)
+  createdAt        DateTime @default(now())
+
+  @@index([senderId, receiverId])
+  @@index([createdAt])
+}

@@ -1,0 +1,39 @@
+# Desenvolvimento local: sobe apenas postgres e redis com portas expostas.
+# Execute as apps com: pnpm dev
+#
+# Uso: docker compose -f docker-compose.dev.yml up -d
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: mapeople_postgres_dev
+    env_file: .env
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-mapeople}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mapeople}
+      POSTGRES_DB: ${POSTGRES_DB:-mapeople_db}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - mapeople_dev
+
+  redis:
+    image: redis:7-alpine
+    container_name: mapeople_redis_dev
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_dev_data:/data
+    networks:
+      - mapeople_dev
+
+volumes:
+  postgres_dev_data:
+  redis_dev_data:
+
+networks:
+  mapeople_dev:
+    driver: bridge
